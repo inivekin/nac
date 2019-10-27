@@ -68,7 +68,7 @@ impl Point2 {
 type Vector2 = Point2;
 
 // a cloth type constraint function for two nodes
-pub fn internode_constraint(node1: &Node<Verlet>, node2: &Node<Verlet>, spacing: f64) -> (Node<Verlet>,Node<Verlet>) {
+pub fn internode_constraint(node1: &Node<Verlet>, node2: &Node<Verlet>, spacing: f64, spring: f64) -> (Node<Verlet>,Node<Verlet>) {
         let diff_x = node1.data.position.x - node2.data.position.x;
         let diff_y = node1.data.position.y - node2.data.position.y;
         let dist = (diff_x * diff_x + diff_y * diff_y).sqrt();
@@ -81,8 +81,8 @@ pub fn internode_constraint(node1: &Node<Verlet>, node2: &Node<Verlet>, spacing:
 
         // TODO tear distance stuff: destroy all refcounts
 
-        let px = diff_x * diff * 0.5;
-        let py = diff_y * diff * 0.5;
+        let px = diff_x * diff * spring;
+        let py = diff_y * diff * spring;
 
 
         let node1_constrained: Node<Verlet>;
@@ -132,6 +132,18 @@ pub fn gravity_constraint(node: &Node<Verlet>, delta: f64, gravity: i16) -> Node
     )
 }
 
+pub fn force_constraint(node: &Node<Verlet>, delta: f64, horz_strength: f64, vert_strength: f64) -> Node<Verlet> {
+    let delta = delta.powi(2);
+    Node::new(
+        Verlet::updated(
+            node.data.position.x + horz_strength * delta,
+            node.data.position.y + vert_strength * delta,
+            node.data.position.x,
+            node.data.position.y
+        )
+    )
+}
+
 pub fn wind_constraint(node: &Node<Verlet>, horz_strength: f64, vert_strength: f64) -> Node<Verlet> {
     let rand_x = horz_strength * rand::thread_rng().gen::<f64>();
     let new_x = if rand_x < -2.5 {
@@ -139,7 +151,7 @@ pub fn wind_constraint(node: &Node<Verlet>, horz_strength: f64, vert_strength: f
     } else {
         0.0
     };
-    let new_x = horz_strength * rand::thread_rng().gen::<f64>();
+    //let new_x = horz_strength * rand::thread_rng().gen::<f64>();
     let new_y = vert_strength * rand::thread_rng().gen::<f64>();
     Node::new(
         Verlet::updated(

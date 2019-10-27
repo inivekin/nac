@@ -44,6 +44,7 @@ pub struct InterConnector<T> {
 }
 
 pub struct SelfConnector<T> {
+    pub name: String,
     pub node: SharedNode<T>,
     relation: Arc<dyn SelfResolve<T>>,
 }
@@ -78,8 +79,9 @@ impl<T> InterConnector<T> {
 }
 
 impl<T> SelfConnector<T> {
-    pub fn new(node: SharedNode<T>, relation: Arc<dyn SelfResolve<T>>) -> Self {
+    pub fn new(name: &str, node: SharedNode<T>, relation: Arc<dyn SelfResolve<T>>) -> Self {
         Self {
+            name: name.to_owned(),
             node,
             relation
         }
@@ -113,11 +115,12 @@ impl<T> Mesh<T> {
 
     pub fn update(&self, delta: f64, physics_accuracy: u8) {
         (0..physics_accuracy).for_each(|_i|
+            {
             self.interconnectors.iter().for_each(|connector|
-                connector.resolve()));
-        self.selfconnectors.iter().for_each(|connector|
-            connector.resolve()
-            )
+                connector.resolve());
+           });
+         self.selfconnectors.iter().for_each(|connector|
+            connector.resolve());
     }
 }
 

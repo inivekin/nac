@@ -5,50 +5,48 @@ use crate::verlet::{gravity_constraint, wind_constraint, internode_constraint, f
 use std::sync::{Arc, RwLock};
 use std::convert::TryInto;
 
+use std::ffi::CStr;
+use std::os::raw::c_char;
+
 pub trait Cloth {
-    fn new_cloth(height: u8, width: u8, spacing: u8) -> Self;
+    fn new_cloth(height: u8, width: u8, spacing: u8, gravity: i16, wind: f64, spring: f64) -> Self;
     fn cloth_boundaries(height: u8, width: u8, spacing: u8) -> Self;
-    fn cloth_interweave(height: u8, width: u8, spacing: u8) -> Self;
+    fn cloth_interweave(height: u8, width: u8, spacing: u8, gravity: i16, spring: f64) -> Self;
 }
 
 impl Cloth for Mesh<Verlet> {
     // TODO(kevinc) make delarative and not imperative
-    fn new_cloth(height: u8, width: u8, spacing: u8) -> Mesh<Verlet> {
+    fn new_cloth(height: u8, width: u8, spacing: u8, gravity: i16, wind: f64, spring: f64) -> Mesh<Verlet> {
         let mut nodes: Vec<SharedNode<Verlet>> = vec!();
         let mut interconnectors: Vec<InterConnector<Verlet>> = vec!();
         let mut selfconnectors: Vec<SelfConnector<Verlet>> = vec!();
-        let gravity = move |node: &Node<Verlet>| gravity_constraint(node, 0.0016,1200);
-        let wind = move |node: &Node<Verlet>| wind_constraint(node, -3.0,-0.00);
-        let cloth_constraint = move |node1: &Node<Verlet>, node2: &Node<Verlet>| internode_constraint(node1,node2,spacing.clone() as f64, 0.5);
+        let gravity = move |node: &Node<Verlet>| gravity_constraint(node, 0.001, gravity);
+        let wind = move |node: &Node<Verlet>| wind_constraint(node, wind,-0.00);
+        let cloth_constraint = move |node1: &Node<Verlet>, node2: &Node<Verlet>| internode_constraint(node1,node2,spacing.clone() as f64, spring);
         for y in 0..height {
             for x in 0..width {
-                let p = Arc::new(RwLock::new(Node::new(Verlet::new(f64::from(x*spacing),f64::from(y*spacing)))));
+                let p: SharedNode<Verlet>;
+                if y == 0 {
+                    p = Arc::new(RwLock::new(Node::new(Verlet::new_pinned(f64::from(spacing*x),f64::from(0.0)))));
+                } else {
+                    p = Arc::new(RwLock::new(Node::new(Verlet::new(f64::from(x*spacing),f64::from(y*spacing)))));
+                    let selfconnector = SelfConnector::new("gravity", Arc::clone(&p),Arc::new(gravity));
+                    selfconnectors.push(selfconnector);
+                    let selfconnector = SelfConnector::new("wind", Arc::clone(&p),Arc::new(wind));
+                    selfconnectors.push(selfconnector);
 
-                let selfconnector = SelfConnector::new(Arc::clone(&p),Arc::new(gravity));
-                selfconnectors.push(selfconnector);
-
+                }
 
                 if x != 0 {
                    let interconnector = InterConnector::new(Arc::clone(&p), Some(vec!(Arc::clone(nodes.last().unwrap()))),Arc::new(cloth_constraint));
                     interconnectors.push(interconnector);
                 }
-                if y == 0 {
-                    let p = Arc::new(RwLock::new(Node::new(Verlet::new_pinned(f64::from(spacing*x),f64::from(0.0)))));
-                    nodes.push(p);
-                } else {
-                    nodes.push(Arc::clone(&p));
-                }
                 if y != 0 {
                    let interconnector = InterConnector::new(Arc::clone(&p), Some(vec!(Arc::clone(&nodes[(x+(y-1) * width) as usize]))), Arc::new(cloth_constraint));
                     interconnectors.push(interconnector);
                 }
-                if (x != 0) & (y != 0) {
-                   let interconnector = InterConnector::new(Arc::clone(&p), Some(vec!(Arc::clone(nodes.last().unwrap()),Arc::clone(&nodes[(x+(y-1) * width) as usize]))), Arc::new(cloth_constraint));
-                    interconnectors.push(interconnector);
-                }
 
-                let selfconnector = SelfConnector::new(Arc::clone(&p),Arc::new(wind));
-                selfconnectors.push(selfconnector);
+                nodes.push(p);
             }
         }
 
@@ -79,7 +77,7 @@ impl Cloth for Mesh<Verlet> {
                 interconnectors.push(interconnector);
             }
 
-            let selfconnector = SelfConnector::new(Arc::clone(&p_up),Arc::new(gravity));
+            let selfconnector = SelfConnector::new("gravity", Arc::clone(&p_up),Arc::new(gravity));
             selfconnectors.push(selfconnector);
             
             nodes.push(p_up);
@@ -87,7 +85,7 @@ impl Cloth for Mesh<Verlet> {
         let interconnector = InterConnector::new(Arc::clone(&top_right), Some(vec!(Arc::clone(nodes.last().unwrap()))),Arc::new(cloth_constraint));
         interconnectors.push(interconnector);
 
-        let selfconnector = SelfConnector::new(Arc::clone(&top_right),Arc::new(gravity));
+        let selfconnector = SelfConnector::new("gravity", Arc::clone(&top_right),Arc::new(gravity));
         selfconnectors.push(selfconnector);
         
         for x in 1..width {
@@ -100,9 +98,9 @@ impl Cloth for Mesh<Verlet> {
                 interconnectors.push(interconnector);
             }
 
-            let selfconnector = SelfConnector::new(Arc::clone(&p),Arc::new(gravity));
+            let selfconnector = SelfConnector::new("gravity", Arc::clone(&p),Arc::new(gravity));
             selfconnectors.push(selfconnector);
-            let selfconnector = SelfConnector::new(Arc::clone(&p),Arc::new(wind));
+            let selfconnector = SelfConnector::new("wind", Arc::clone(&p),Arc::new(wind));
             selfconnectors.push(selfconnector);
             
             nodes.push(p);
@@ -110,9 +108,9 @@ impl Cloth for Mesh<Verlet> {
         let interconnector = InterConnector::new(Arc::clone(&bottom_right), Some(vec!(Arc::clone(nodes.last().unwrap()))),Arc::new(cloth_constraint));
         interconnectors.push(interconnector);
 
-        let selfconnector = SelfConnector::new(Arc::clone(&bottom_right),Arc::new(gravity));
+        let selfconnector = SelfConnector::new("gravity", Arc::clone(&bottom_right),Arc::new(gravity));
         selfconnectors.push(selfconnector);
-        let selfconnector = SelfConnector::new(Arc::clone(&bottom_right),Arc::new(wind));
+        let selfconnector = SelfConnector::new("wind", Arc::clone(&bottom_right),Arc::new(wind));
         selfconnectors.push(selfconnector);
         
 
@@ -127,7 +125,7 @@ impl Cloth for Mesh<Verlet> {
                 interconnectors.push(interconnector);
             }
 
-            let selfconnector = SelfConnector::new(Arc::clone(&p),Arc::new(gravity));
+            let selfconnector = SelfConnector::new("gravity", Arc::clone(&p),Arc::new(gravity));
             selfconnectors.push(selfconnector);
             
             nodes.push(p);
@@ -135,7 +133,7 @@ impl Cloth for Mesh<Verlet> {
         let interconnector = InterConnector::new(Arc::clone(&bottom_left), Some(vec!(Arc::clone(nodes.last().unwrap()))),Arc::new(cloth_constraint));
         interconnectors.push(interconnector);
 
-        let selfconnector = SelfConnector::new(Arc::clone(&bottom_left),Arc::new(gravity));
+        let selfconnector = SelfConnector::new("gravity", Arc::clone(&bottom_left),Arc::new(gravity));
         selfconnectors.push(selfconnector);
 
 
@@ -149,7 +147,7 @@ impl Cloth for Mesh<Verlet> {
                 interconnectors.push(interconnector);
             }
 
-            let selfconnector = SelfConnector::new(Arc::clone(&p),Arc::new(gravity));
+            let selfconnector = SelfConnector::new("gravity", Arc::clone(&p),Arc::new(gravity));
             selfconnectors.push(selfconnector);
             
             nodes.push(p);
@@ -157,7 +155,7 @@ impl Cloth for Mesh<Verlet> {
         let interconnector = InterConnector::new(Arc::clone(&bottom_right), Some(vec!(Arc::clone(nodes.last().unwrap()))),Arc::new(cloth_constraint));
         interconnectors.push(interconnector);
 
-        let selfconnector = SelfConnector::new(Arc::clone(&bottom_right),Arc::new(gravity));
+        let selfconnector = SelfConnector::new("gravity", Arc::clone(&bottom_right),Arc::new(gravity));
         selfconnectors.push(selfconnector);
 
         nodes.push(top_left);
@@ -168,13 +166,13 @@ impl Cloth for Mesh<Verlet> {
         Mesh::new(nodes, interconnectors, selfconnectors)
     }
 
-    fn cloth_interweave(height: u8, width: u8, spacing: u8) -> Mesh<Verlet> {
+    fn cloth_interweave(height: u8, width: u8, spacing: u8, gravity: i16, spring: f64) -> Mesh<Verlet> {
         let mut nodes: Vec<SharedNode<Verlet>> = vec!();
         let mut interconnectors: Vec<InterConnector<Verlet>> = vec!();
         let mut selfconnectors: Vec<SelfConnector<Verlet>> = vec!();
-        let gravity = move |node: &Node<Verlet>| gravity_constraint(node, 0.00016,1200);
+        let gravity = move |node: &Node<Verlet>| gravity_constraint(node, 0.001,gravity);
         let wind = move |node: &Node<Verlet>| wind_constraint(node, -4.0,-0.00);
-        let cloth_constraint = move |node1: &Node<Verlet>, node2: &Node<Verlet>| internode_constraint(node1,node2,spacing.clone() as f64, 0.5);
+        let cloth_constraint = move |node1: &Node<Verlet>, node2: &Node<Verlet>| internode_constraint(node1,node2,spacing.clone() as f64, spring);
 
         let top_left = Arc::new(RwLock::new(Node::new(Verlet::new_pinned(f64::from(0),f64::from(0)))));
         let top_right = Arc::new(RwLock::new(Node::new(Verlet::new_pinned(f64::from(width*spacing),f64::from(0)))));
@@ -191,7 +189,7 @@ impl Cloth for Mesh<Verlet> {
                 interconnectors.push(interconnector);
             }
 
-            let selfconnector = SelfConnector::new(Arc::clone(&p_up),Arc::new(gravity));
+            let selfconnector = SelfConnector::new("gravity", Arc::clone(&p_up),Arc::new(gravity));
             selfconnectors.push(selfconnector);
             
             let p_down = Arc::new(RwLock::new(Node::new(Verlet::new(f64::from(x*spacing),f64::from(height*spacing)))));
@@ -203,12 +201,12 @@ impl Cloth for Mesh<Verlet> {
                 interconnectors.push(interconnector);
             }
 
-            let selfconnector = SelfConnector::new(Arc::clone(&p_down),Arc::new(gravity));
+            let selfconnector = SelfConnector::new("gravity", Arc::clone(&p_down),Arc::new(gravity));
             selfconnectors.push(selfconnector);
-            let selfconnector = SelfConnector::new(Arc::clone(&p_down),Arc::new(wind));
+            let selfconnector = SelfConnector::new("wind", Arc::clone(&p_down),Arc::new(wind));
             selfconnectors.push(selfconnector);
 
-            let height_constraint = move |node1: &Node<Verlet>, node2: &Node<Verlet>| internode_constraint(node1,node2,(spacing*height) as f64, 0.5);
+            let height_constraint = move |node1: &Node<Verlet>, node2: &Node<Verlet>| internode_constraint(node1,node2,(spacing*height) as f64, spring);
             let interconnector = InterConnector::new(Arc::clone(&p_down), Some(vec!(Arc::clone(&p_up))),Arc::new(height_constraint));
             interconnectors.push(interconnector);
             
@@ -221,11 +219,15 @@ impl Cloth for Mesh<Verlet> {
         let interconnector = InterConnector::new(Arc::clone(&top_right), Some(vec!(Arc::clone(&nodes[(nodes.len() - 2) as usize]))),Arc::new(cloth_constraint));
         interconnectors.push(interconnector);
 
+        //let height_constraint = move |node1: &Node<Verlet>, node2: &Node<Verlet>| internode_constraint(node1,node2,(spacing*height) as f64, spring);
+        //let interconnector = InterConnector::new(Arc::clone(&bottom_right), Some(vec!(Arc::clone(&top_right))),Arc::new(height_constraint));
+        //interconnectors.push(interconnector);
+        //let interconnector = InterConnector::new(Arc::clone(&bottom_left), Some(vec!(Arc::clone(&top_left))),Arc::new(height_constraint));
+        //interconnectors.push(interconnector);
 
-
-        let selfconnector = SelfConnector::new(Arc::clone(&bottom_right),Arc::new(gravity));
+        let selfconnector = SelfConnector::new("gravity", Arc::clone(&bottom_right),Arc::new(gravity));
         selfconnectors.push(selfconnector);
-        let selfconnector = SelfConnector::new(Arc::clone(&bottom_right),Arc::new(wind));
+        let selfconnector = SelfConnector::new("wind", Arc::clone(&bottom_right),Arc::new(wind));
         selfconnectors.push(selfconnector);
         
 
@@ -240,7 +242,7 @@ impl Cloth for Mesh<Verlet> {
                 interconnectors.push(interconnector);
             }
 
-            let selfconnector = SelfConnector::new(Arc::clone(&p_left),Arc::new(gravity));
+            let selfconnector = SelfConnector::new("gravity", Arc::clone(&p_left),Arc::new(gravity));
             selfconnectors.push(selfconnector);
             
             let p_right = Arc::new(RwLock::new(Node::new(Verlet::new(f64::from(width*spacing),f64::from(y*spacing)))));
@@ -252,10 +254,10 @@ impl Cloth for Mesh<Verlet> {
                 interconnectors.push(interconnector);
             }
 
-            let selfconnector = SelfConnector::new(Arc::clone(&p_right),Arc::new(gravity));
+            let selfconnector = SelfConnector::new("gravity", Arc::clone(&p_right),Arc::new(gravity));
             selfconnectors.push(selfconnector);
             
-            let width_constraint = move |node1: &Node<Verlet>, node2: &Node<Verlet>| internode_constraint(node1,node2,(spacing*width) as f64, 0.5);
+            let width_constraint = move |node1: &Node<Verlet>, node2: &Node<Verlet>| internode_constraint(node1,node2,(spacing*width) as f64, spring);
             let interconnector = InterConnector::new(Arc::clone(&p_left), Some(vec!(Arc::clone(&p_right))),Arc::new(width_constraint));
             interconnectors.push(interconnector);
 
@@ -267,12 +269,11 @@ impl Cloth for Mesh<Verlet> {
         let interconnector = InterConnector::new(Arc::clone(&bottom_left), Some(vec!(Arc::clone(&nodes[(nodes.len() - 2) as usize]))),Arc::new(cloth_constraint));
         interconnectors.push(interconnector);
 
-        let selfconnector = SelfConnector::new(Arc::clone(&bottom_left),Arc::new(gravity));
-        selfconnectors.push(selfconnector);
+        //let selfconnector = SelfConnector::new("gravity", Arc::clone(&bottom_left),Arc::new(gravity));
+        //selfconnectors.push(selfconnector);
 
-
-        let selfconnector = SelfConnector::new(Arc::clone(&bottom_right),Arc::new(gravity));
-        selfconnectors.push(selfconnector);
+        //let selfconnector = SelfConnector::new("gravity", Arc::clone(&bottom_right),Arc::new(gravity));
+        //selfconnectors.push(selfconnector);
 
         nodes.push(top_left);
         nodes.push(bottom_right);
@@ -289,17 +290,17 @@ pub unsafe extern fn create_verlet_node(x: f64, y: f64) -> *mut SharedNode<Verle
     Box::into_raw(Box::new(Arc::new(RwLock::new(Node::new(Verlet::new(x,y))))))
 }
 
-#[no_mangle]
-pub unsafe extern fn add_impetus(mesh_ptr: *mut Mesh<Verlet>, node_ptr: *mut SharedNode<Verlet>, delta: f64, x_force: f64, y_force: f64) {
+/*#[no_mangle]
+pub unsafe extern fn add_impetus(mesh_ptr: *mut Mesh<Verlet>, node_ptr: *mut SharedNode<Verlet>, name: String, delta: f64, x_force: f64, y_force: f64) {
     if !mesh_ptr.is_null() & !node_ptr.is_null() {
         let mesh = mesh_ptr as *mut Mesh<Verlet>;
         let node = node_ptr as *mut SharedNode<Verlet>;
 
         let constraint = move |node: &Node<Verlet>| force_constraint(node, delta, x_force, y_force);
 
-        (*mesh).selfconnectors.push(SelfConnector::new(Arc::clone(&(*node)), Arc::new(constraint)));
+        (*mesh).selfconnectors.push(SelfConnector::new(name, Arc::clone(&(*node)), Arc::new(constraint)));
     }
-}
+}*/
 
 /*#[no_mangle]
 pub unsafe extern init_node_group() -> *mut Option<SharedNodes<Verlet>> {
@@ -346,6 +347,41 @@ pub unsafe extern fn add_connector(mesh_ptr: *mut Mesh<Verlet>, primary_node_ptr
     }               
 }
 
+impl PartialEq for SelfConnector<Verlet> {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+#[no_mangle]
+pub unsafe extern fn remove_constraint_by_id(mesh: *mut Mesh<Verlet>, id: *const c_char) {
+    if !mesh.is_null() & !id.is_null() {
+        let mesh = mesh as *mut Mesh<Verlet>;
+        let id = id as *const c_char;
+        let name = CStr::from_ptr(id).to_string_lossy().into_owned();
+        //let name = str::from_utf8(CStr::from_ptr(id).to_bytes()).unwrap().to_owned();
+
+        //let unmatched_connectors = (*mesh).selfconnectors.iter().filter(|*connector| connector.name != name).collect();
+        //(*mesh).selfconnectors = unmatched_connectors;
+        for (idx, connector) in (*mesh).selfconnectors.iter().enumerate() {
+            if connector.name == name {
+                if idx < (*mesh).selfconnectors.len() {
+                    (*mesh).selfconnectors.remove(idx);
+                }
+            }
+        }
+    }
+}
+
+
+#[no_mangle]
+pub unsafe extern fn get_cloth_mesh_field(h: u8, w: u8, s: u8, g: i16, wind: f64, spring: f64)
+    -> *mut Mesh<Verlet>
+{
+    let mesh = Cloth::new_cloth(w, h, s, g, wind, spring);
+    Box::into_raw(Box::new(mesh)) as *mut Mesh<Verlet>
+}
+
 #[no_mangle]
 pub unsafe extern fn get_cloth_mesh(h: u8, w: u8, s: u8)
     -> *mut Mesh<Verlet>
@@ -355,10 +391,10 @@ pub unsafe extern fn get_cloth_mesh(h: u8, w: u8, s: u8)
 }
 
 #[no_mangle]
-pub unsafe extern fn get_woven_cloth_mesh(h: u8, w: u8, s: u8)
+pub unsafe extern fn get_woven_cloth_mesh(h: u8, w: u8, s: u8, g: i16, spring: f64)
     -> *mut Mesh<Verlet>
 {
-    let mesh = Cloth::cloth_interweave(w, h, s);
+    let mesh = Cloth::cloth_interweave(w, h, s, g, spring);
     Box::into_raw(Box::new(mesh)) as *mut Mesh<Verlet>
 }
 
@@ -366,7 +402,7 @@ pub unsafe extern fn get_woven_cloth_mesh(h: u8, w: u8, s: u8)
 pub unsafe extern fn update_cloth_mesh(mesh_ptr: *mut Mesh<Verlet>, delta: f64, physics_accuracy: u8) {
     if !mesh_ptr.is_null() {
         let mesh = mesh_ptr as *mut Mesh<Verlet>;
-        (*mesh).update(delta, physics_accuracy)
+        (*mesh).update(delta, physics_accuracy);
     }
 }
 

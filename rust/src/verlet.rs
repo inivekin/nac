@@ -28,6 +28,7 @@ impl Verlet {
     pub fn new(x: f64, y: f64) -> Self {
         VerletBuilder::default()
             .position(Point2::new(x,y))
+            .delta_position(Point2::new(x,y))
             .build()
             .unwrap()
     }
@@ -71,18 +72,18 @@ type Vector2 = Point2;
 pub fn internode_constraint(node1: &Node<Verlet>, node2: &Node<Verlet>, spacing: f64, spring: f64) -> (Node<Verlet>,Node<Verlet>) {
         let diff_x = node1.data.position.x - node2.data.position.x;
         let diff_y = node1.data.position.y - node2.data.position.y;
-        let dist = (diff_x * diff_x + diff_y * diff_y).sqrt();
+        let dist = (diff_x.powi(2) + diff_y.powi(2)).sqrt();
 
-        let mut diff = 0.0;
-        if dist != 0.0
-        {
-            diff = (spacing - dist) / dist;
-        }
+        let diff = (spacing - dist) / dist;
 
         // TODO tear distance stuff: destroy all refcounts
 
         let px = diff_x * diff * spring;
+        println!("x: {:?}, {:?}, {:?}, {:?}", diff_x, diff, spring, px);
+        println!("pos: {:?}, {:?}", node1.data.position.x, node2.data.position.x);
         let py = diff_y * diff * spring;
+        println!("y: {:?}, {:?}, {:?}, {:?}", diff_y, diff, spring, py);
+        println!("pos: {:?}, {:?}", node1.data.position.y, node2.data.position.y);
 
 
         let node1_constrained: Node<Verlet>;
@@ -95,8 +96,8 @@ pub fn internode_constraint(node1: &Node<Verlet>, node2: &Node<Verlet>, spacing:
                 Verlet::updated(
                     node1.data.position.x + px,
                     node1.data.position.y + py,
-                    node1.data.position.x,
-                    node1.data.position.y
+                    node1.data.delta_position.x,
+                    node1.data.delta_position.y
                 )
             );
         }
@@ -111,8 +112,8 @@ pub fn internode_constraint(node1: &Node<Verlet>, node2: &Node<Verlet>, spacing:
                 Verlet::updated(
                     node2.data.position.x - px,
                     node2.data.position.y - py,
-                    node2.data.position.x,
-                    node2.data.position.y
+                    node2.data.delta_position.x,
+                    node2.data.delta_position.y
                 )
             );
         }
@@ -121,11 +122,11 @@ pub fn internode_constraint(node1: &Node<Verlet>, node2: &Node<Verlet>, spacing:
 }
 
 pub fn gravity_constraint(node: &Node<Verlet>, delta: f64, gravity: i16) -> Node<Verlet> {
-    let delta = delta.powi(2);
+    //let delta = delta.powi(2);
     Node::new(
         Verlet::updated(
-            node.data.position.x,
-            node.data.position.y + f64::from(gravity) * delta,
+            node.data.position.x + (node.data.position.x - node.data.delta_position.x) * 0.99,
+            node.data.position.y + (node.data.position.y - node.data.delta_position.y) * 0.99 + f64::from(gravity) * delta,
             node.data.position.x,
             node.data.position.y
         )
@@ -146,7 +147,7 @@ pub fn force_constraint(node: &Node<Verlet>, delta: f64, horz_strength: f64, ver
 
 pub fn wind_constraint(node: &Node<Verlet>, horz_strength: f64, vert_strength: f64) -> Node<Verlet> {
     let rand_x = horz_strength * rand::thread_rng().gen::<f64>();
-    let new_x = if rand_x < -2.5 {
+    let new_x = if rand_x < horz_strength * 0.5 {
         rand_x
     } else {
         0.0
@@ -157,8 +158,8 @@ pub fn wind_constraint(node: &Node<Verlet>, horz_strength: f64, vert_strength: f
         Verlet::updated(
             node.data.position.x + new_x,
             node.data.position.y + new_y,
-            node.data.position.x,
-            node.data.position.y
+            node.data.delta_position.x,
+            node.data.delta_position.y
         )
     )
 }

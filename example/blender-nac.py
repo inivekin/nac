@@ -66,13 +66,14 @@ def draw_line(gp_frame, p0: tuple, p1: tuple):
     return gp_stroke
 
 
-NUM_FRAMES = 120
+NUM_FRAMES = 600
 FRAMES_SPACING = 1  # distance between frames
 bpy.context.scene.frame_start = 0
 bpy.context.scene.frame_end = NUM_FRAMES*FRAMES_SPACING
 
 #cloth_ptr = lib.get_cloth_mesh(5,10,10)
-cloth_ptr = lib.get_woven_cloth_mesh(5,20,5)
+#cloth_ptr = lib.get_woven_cloth_mesh(5,15,5, 120, 0.5)
+cloth_ptr = lib.get_cloth_mesh_field(5,10,5, 120, +3.0, 0.5)
 gp_layer = init_grease_pencil()
 
 for frame in range(NUM_FRAMES):
@@ -90,6 +91,10 @@ for frame in range(NUM_FRAMES):
 
     inter_con_count = lib.get_cloth_interconnector_count(cloth_ptr)
     constraint_counts = [lib.get_interconnector_constraint_count(cloth_ptr, index) for index in range(inter_con_count)]
+    
+    if frame == 100:
+        name = ffi.new('char[]', bytes("wind", 'utf-8'))
+        lib.remove_constraint_by_id(cloth_ptr, name)
         
     connector_positions = []
     for inter_index in range(inter_con_count):
@@ -98,6 +103,6 @@ for frame in range(NUM_FRAMES):
     for node in connector_positions:
         draw_line(gp_frame, (0, node.x, node.y), (0, node.dx, node.dy))
     
-    lib.update_cloth_mesh(cloth_ptr, 0.0016, 3)
+    lib.update_cloth_mesh(cloth_ptr, 0.016, 3)
 
 lib.mesh_free(cloth_ptr)

@@ -10,3 +10,4 @@ fn main() {
       .unwrap()
       .write_to_file("target/example.h");
 }
+

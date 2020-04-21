@@ -9,8 +9,6 @@ pub struct Verlet {
     pub position:  Point2,
     #[builder(default="self.get_default_point(0.0,0.0)")]
     delta_position: Point2,
-    #[builder(default="self.get_default_point(0.0,0.0)")]
-    theta_position: Vector2,
     #[builder(default="false")]
     pub pinned: bool,
 }
@@ -79,11 +77,11 @@ pub fn internode_constraint(node1: &Node<Verlet>, node2: &Node<Verlet>, spacing:
         // TODO tear distance stuff: destroy all refcounts
 
         let px = diff_x * diff * spring;
-        println!("x: {:?}, {:?}, {:?}, {:?}", diff_x, diff, spring, px);
-        println!("pos: {:?}, {:?}", node1.data.position.x, node2.data.position.x);
+        //println!("x: {:?}, {:?}, {:?}, {:?}", diff_x, diff, spring, px);
+        //println!("pos: {:?}, {:?}", node1.data.position.x, node2.data.position.x);
         let py = diff_y * diff * spring;
-        println!("y: {:?}, {:?}, {:?}, {:?}", diff_y, diff, spring, py);
-        println!("pos: {:?}, {:?}", node1.data.position.y, node2.data.position.y);
+        //println!("y: {:?}, {:?}, {:?}, {:?}", diff_y, diff, spring, py);
+        //println!("pos: {:?}, {:?}", node1.data.position.y, node2.data.position.y);
 
 
         let node1_constrained: Node<Verlet>;
@@ -122,11 +120,10 @@ pub fn internode_constraint(node1: &Node<Verlet>, node2: &Node<Verlet>, spacing:
 }
 
 pub fn gravity_constraint(node: &Node<Verlet>, delta: f64, gravity: i16) -> Node<Verlet> {
-    //let delta = delta.powi(2);
     Node::new(
         Verlet::updated(
-            node.data.position.x + (node.data.position.x - node.data.delta_position.x) * 0.99,
-            node.data.position.y + (node.data.position.y - node.data.delta_position.y) * 0.99 + f64::from(gravity) * delta,
+            node.data.position.x + (node.data.position.x - node.data.delta_position.x),
+            node.data.position.y + (node.data.position.y - node.data.delta_position.y) + 0.5 * f64::from(gravity) * delta.powi(2),
             node.data.position.x,
             node.data.position.y
         )
@@ -153,7 +150,12 @@ pub fn wind_constraint(node: &Node<Verlet>, horz_strength: f64, vert_strength: f
         0.0
     };
     //let new_x = horz_strength * rand::thread_rng().gen::<f64>();
-    let new_y = vert_strength * rand::thread_rng().gen::<f64>();
+    let rand_y = vert_strength * rand::thread_rng().gen::<f64>();
+    let new_y = if rand_y < vert_strength * 0.5 {
+        rand_y
+    } else {
+        0.0
+    };
     Node::new(
         Verlet::updated(
             node.data.position.x + new_x,
@@ -162,4 +164,54 @@ pub fn wind_constraint(node: &Node<Verlet>, horz_strength: f64, vert_strength: f
             node.data.delta_position.y
         )
     )
+}
+
+pub fn ground_bound_gravity_constraint(node: &Node<Verlet>, delta: f64, gravity: i16, boundary: f64) -> Node<Verlet> {
+    let new_node: Node<Verlet>;
+    if node.data.position.y < boundary
+    {
+        new_node = Node::new(
+            Verlet::updated(
+                node.data.position.x,
+                boundary,
+                node.data.delta_position.x,
+                node.data.delta_position.y
+            )
+        );
+    }
+    else
+    {
+        new_node = gravity_constraint(node, delta, gravity);
+    }
+    
+    new_node
+}
+
+
+pub fn ground_boundary_constraint(node: &Node<Verlet>, boundary: f64) -> Node<Verlet> {
+    let new_node: Node<Verlet>;
+    if node.data.position.y < boundary
+    {
+        new_node = Node::new(
+            Verlet::updated(
+                node.data.position.x,
+                boundary,
+                node.data.delta_position.x,
+                node.data.delta_position.y
+            )
+        );
+    }
+    else
+    {
+        new_node = Node::new(
+            Verlet::updated(
+                node.data.position.x,
+                node.data.position.y,
+                node.data.delta_position.x,
+                node.data.delta_position.y
+            )
+        );
+    }
+    
+    new_node
 }
